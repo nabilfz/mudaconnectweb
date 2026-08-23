@@ -19,13 +19,13 @@ describe('n8nProxy unit tests', () => {
     process.env = originalEnv;
   });
 
-  it('getSecureWebhookUrl supports primary and VITE_ fallback environment variables', () => {
+  it('getSecureWebhookUrl only reads server-side webhook environment variables', () => {
     process.env.N8N_CHAT_WEBHOOK_URL = 'https://n8n.example.com/webhook/chat';
     expect(getSecureWebhookUrl('N8N_CHAT_WEBHOOK_URL')).toBe('https://n8n.example.com/webhook/chat');
 
     delete process.env.N8N_CHAT_WEBHOOK_URL;
     process.env.VITE_N8N_CHAT_WEBHOOK_URL = 'https://n8n.example.com/webhook/vite-chat';
-    expect(getSecureWebhookUrl('N8N_CHAT_WEBHOOK_URL')).toBe('https://n8n.example.com/webhook/vite-chat');
+    expect(getSecureWebhookUrl('N8N_CHAT_WEBHOOK_URL')).toBeNull();
   });
 
   it('getSecureWebhookUrl rejects non-HTTPS URLs', () => {
@@ -56,10 +56,9 @@ describe('n8nProxy unit tests', () => {
     expect(hasValidFormTiming(tooFast)).toBe(false);
   });
 
-  it('forwardToN8n works without N8N_SHARED_SECRET', async () => {
+  it('forwardToN8n fails closed when N8N_SHARED_SECRET is missing', async () => {
+    process.env.N8N_CHAT_WEBHOOK_URL = 'https://n8n.example.com/webhook/chat';
     delete process.env.N8N_SHARED_SECRET;
-    delete process.env.N8N_CHAT_WEBHOOK_URL;
-    delete process.env.VITE_N8N_CHAT_WEBHOOK_URL;
 
     const req = new Request('http://localhost:3000/api/chat', { method: 'POST' });
     const res = await forwardToN8n({
@@ -71,5 +70,19 @@ describe('n8nProxy unit tests', () => {
     expect(res.status).toBe(503);
     const json = await res.json();
     expect(json.message).toContain('Layanan integrasi belum dikonfigurasi');
+  });
+
+  it('forwardToN8n fails closed when webhook URL is missing even if secret exists', async () => {
+    delete process.env.N8N_CHAT_WEBHOOK_URL;
+    process.env.N8N_SHARED_SECRET = 'test-secret';
+
+    const req = new Request('http://localhost:3000/api/chat', { method: 'POST' });
+    const res = await forwardToN8n({
+      envName: 'N8N_CHAT_WEBHOOK_URL',
+      request: req,
+      body: { message: 'hi' },
+    });
+
+    expect(res.status).toBe(503);
   });
 });
