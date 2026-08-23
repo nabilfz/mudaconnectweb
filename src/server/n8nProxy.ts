@@ -15,9 +15,7 @@ export interface ProxyOptions {
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
 export function getSecureWebhookUrl(envName: ProxyOptions['envName']): string | null {
-  const viteFallbackName = `VITE_${envName}`;
-
-  const rawValue = (process.env[envName] ?? process.env[viteFallbackName])?.trim();
+  const rawValue = process.env[envName]?.trim();
 
   if (!rawValue) return null;
 
@@ -140,11 +138,37 @@ export async function enforceAdminAuth(request: Request): Promise<Response | nul
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const { data, error } = await supabase.auth.getUser(token);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
 
-    if (error || !data.user) {
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !authData.user) {
       return jsonResponse({ success: false, message: 'Sesi admin tidak valid atau telah berakhir.' }, 401);
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role,is_active')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      return jsonResponse({ success: false, message: 'Profil admin tidak dapat diverifikasi.' }, 403);
+    }
+
+    const hasAdminRole = profile.role === 'admin' || profile.role === 'super_admin';
+    if (!hasAdminRole || profile.is_active !== true) {
+      return jsonResponse({ success: false, message: 'Akun tidak memiliki akses admin aktif.' }, 403);
     }
 
     return null;
@@ -155,7 +179,9 @@ export async function enforceAdminAuth(request: Request): Promise<Response | nul
 
 export async function forwardToN8n(options: ProxyOptions): Promise<Response> {
   const webhookUrl = getSecureWebhookUrl(options.envName);
-  if (!webhookUrl) {
+  const sharedSecret = process.env.N8N_SHARED_SECRET?.trim();
+
+  if (!webhookUrl || !sharedSecret) {
     return jsonResponse(
       { success: false, message: 'Layanan integrasi belum dikonfigurasi pada server.' },
       503
@@ -165,12 +191,8 @@ export async function forwardToN8n(options: ProxyOptions): Promise<Response> {
   const headers = new Headers({
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'X-MudaConnect-Secret': sharedSecret,
   });
-
-  const sharedSecret = process.env.N8N_SHARED_SECRET?.trim();
-  if (sharedSecret) {
-    headers.set('X-MudaConnect-Secret', sharedSecret);
-  }
 
   if (options.forwardAuthorization) {
     const authHeader = options.request.headers.get('authorization');
