@@ -44,14 +44,15 @@ pisahkan variabel browser dan variabel server berikut.
 | `N8N_CONTACT_WEBHOOK_URL` | Server | Workflow formulir kontak |
 | `N8N_INTEREST_DECISION_WEBHOOK_URL` | Server | Workflow keputusan peserta |
 | `N8N_CONTACT_REPLY_WEBHOOK_URL` | Server | Workflow balasan kontak |
-| `N8N_SHARED_SECRET` | Server | Secret acak minimal 24 karakter yang diverifikasi n8n |
+| `N8N_SHARED_SECRET` | Server | Secret acak kuat yang diverifikasi n8n |
 | `VITE_ENABLE_DEMO_ADMIN` | Development | Mengaktifkan login admin data contoh |
 | `VITE_APP_NAME` | Browser | Nama aplikasi |
 | `VITE_APP_BASE_URL` | Browser | URL kanonis production |
 
 Jangan memberi prefix `VITE_` pada URL webhook, shared secret, service-role key,
 atau credential server lain. n8n wajib menolak permintaan bila header
-`X-MudaConnect-Secret` tidak cocok.
+`X-MudaConnect-Secret` tidak cocok. Proxy aplikasi juga fail-closed bila URL
+webhook atau `N8N_SHARED_SECRET` belum dikonfigurasi.
 
 ## Supabase
 
@@ -59,13 +60,19 @@ Migration tersedia dalam urutan:
 
 1. `supabase/migrations/202607260000_base_schema.sql`
 2. `supabase/migrations/202607260001_harden_public_access.sql`
+3. `supabase/migrations/202608230001_tighten_admin_privileges.sql`
 
 Migration pertama membuat skema, index, trigger profil, dan bucket untuk proyek
-baru. Migration kedua menambahkan field takarir/transkrip serta RLS:
+baru. Migration kedua menambahkan field takarir/transkrip serta RLS dasar.
+Migration ketiga memperketat privilege admin:
 
 - anon hanya dapat membaca program, FAQ, dan konten berstatus `published`;
 - data minat, kontak, chat, settings, profil, serta audit hanya dapat diakses
   admin aktif;
+- admin aktif dapat membaca daftar profil, tetapi hanya `super_admin` aktif yang
+  dapat membuat, mengubah, atau menghapus profil melalui client;
+- audit log dapat dibaca admin dan ditambahkan untuk identitas admin yang sedang
+  login, tetapi tidak dapat diubah atau dihapus dari dashboard;
 - tidak ada kebijakan anon untuk menulis form/chat—workflow n8n menulis dengan
   service role di sisi server;
 - media publik dapat dibaca siapa pun, tetapi mutasi storage hanya untuk admin.
@@ -106,17 +113,18 @@ juga menerima bearer token yang telah diverifikasi proxy.
 ## Deployment Vercel
 
 1. Gunakan Node.js 22.22+.
-2. Atur seluruh environment variable production.
-3. Jalankan dua migration Supabase dan verifikasi RLS menggunakan akun anon,
-   admin, serta user biasa.
+2. Atur seluruh environment variable production, termasuk `N8N_SHARED_SECRET`.
+3. Jalankan ketiga migration Supabase dan verifikasi RLS menggunakan akun anon,
+   admin, super-admin, serta user biasa.
 4. Pastikan semua workflow n8n aktif dan memeriksa shared secret.
 5. Jalankan `npm ci && npm run check`.
 6. Deploy, lalu uji desktop/mobile, form, MudaBot, login admin, upload media,
    keputusan peserta, dan balasan kontak.
 
-`vercel.json` menyediakan SPA fallback, CSP, HSTS, anti-framing, referrer
-policy, dan permissions policy. Bila domain media baru ditambahkan, perbarui CSP
-secara eksplisit.
+`vercel.json` menyediakan SPA fallback melalui rewrite serta CSP, HSTS,
+anti-framing, referrer policy, dan permissions policy. Production Express
+server (`npm start`) memasang header keamanan yang setara. Bila domain media
+atau API eksternal baru ditambahkan, perbarui CSP secara eksplisit.
 
 ## Struktur
 
