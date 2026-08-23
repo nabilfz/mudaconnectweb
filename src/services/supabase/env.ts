@@ -1,11 +1,6 @@
 export interface AppEnv {
   supabaseUrl: string;
   supabaseAnonKey: string;
-  n8nChatWebhookUrl: string;
-  n8nInterestWebhookUrl: string;
-  n8nContactWebhookUrl: string;
-  n8nInterestDecisionWebhookUrl: string;
-  n8nContactReplyWebhookUrl: string;
   appName: string;
   appBaseUrl: string;
   apiProxyEnabled: boolean;
@@ -21,23 +16,12 @@ export interface AppEnv {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
 
-const n8nChatWebhookUrl = import.meta.env.VITE_N8N_CHAT_WEBHOOK_URL?.trim() ?? '';
-const n8nInterestWebhookUrl = import.meta.env.VITE_N8N_INTEREST_WEBHOOK_URL?.trim() ?? '';
-const n8nContactWebhookUrl = import.meta.env.VITE_N8N_CONTACT_WEBHOOK_URL?.trim() ?? '';
-const n8nInterestDecisionWebhookUrl = import.meta.env.VITE_N8N_INTEREST_DECISION_WEBHOOK_URL?.trim() ?? '';
-const n8nContactReplyWebhookUrl = import.meta.env.VITE_N8N_CONTACT_REPLY_WEBHOOK_URL?.trim() ?? '';
-
 const appNameRaw = import.meta.env.VITE_APP_NAME?.trim() ?? '';
 const appBaseUrlRaw = import.meta.env.VITE_APP_BASE_URL?.trim() ?? '';
 
 export const env: AppEnv = {
   supabaseUrl,
   supabaseAnonKey,
-  n8nChatWebhookUrl,
-  n8nInterestWebhookUrl,
-  n8nContactWebhookUrl,
-  n8nInterestDecisionWebhookUrl,
-  n8nContactReplyWebhookUrl,
   get appName(): string {
     return appNameRaw && appNameRaw !== '' ? appNameRaw : 'MudaConnect';
   },
