@@ -8,12 +8,29 @@ import contactReplyApi from './api/contact-reply.js';
 import interestApi from './api/interest.js';
 import interestDecisionApi from './api/interest-decision.js';
 
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  "media-src 'self' blob: https:",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  'upgrade-insecure-requests',
+].join('; ');
+
 function createWebAdapter(handler: { fetch: (request: Request) => Promise<Response> }) {
   return async (req: express.Request, res: express.Response) => {
     try {
       const origin = `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
       const url = `${origin}${req.originalUrl || req.url}`;
-      
+
       const headers = new Headers();
       for (const [key, value] of Object.entries(req.headers)) {
         if (value) {
@@ -63,6 +80,25 @@ function createWebAdapter(handler: { fetch: (request: Request) => Promise<Respon
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()'
+    );
+
+    if (isProduction) {
+      res.setHeader('Content-Security-Policy', contentSecurityPolicy);
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+    }
+
+    next();
+  });
 
   app.use('/api/chat', createWebAdapter(chatApi));
   app.use('/api/contact', createWebAdapter(contactApi));
@@ -71,7 +107,7 @@ async function startServer() {
   app.use('/api/interest-decision', createWebAdapter(interestDecisionApi));
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
