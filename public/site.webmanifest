@@ -1,0 +1,17 @@
+{
+  "name": "MudaConnect",
+  "short_name": "MudaConnect",
+  "description": "Platform informasi dan partisipasi untuk pemuda Indonesia.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1eee7",
+  "theme_color": "#071f32",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "https://zgfqlypvghepbxxdeugn.supabase.co/storage/v1/object/public/public-media/web-aset/Logo-ikon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
