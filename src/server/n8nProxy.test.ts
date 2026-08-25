@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getSecureWebhookUrl,
   cleanString,
@@ -17,6 +17,7 @@ describe('n8nProxy unit tests', () => {
 
   afterEach(() => {
     process.env = originalEnv;
+    vi.restoreAllMocks();
   });
 
   it('getSecureWebhookUrl only reads server-side webhook environment variables', () => {
@@ -84,5 +85,38 @@ describe('n8nProxy unit tests', () => {
     });
 
     expect(res.status).toBe(503);
+  });
+
+  it('forwardToN8n sends shared secret and trusted admin id without forwarding browser bearer token', async () => {
+    process.env.N8N_CONTACT_REPLY_WEBHOOK_URL = 'https://n8n.example.com/webhook/contact-reply';
+    process.env.N8N_SHARED_SECRET = 'test-secret';
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const req = new Request('http://localhost:3000/api/contact-reply', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer browser-token' },
+    });
+
+    const res = await forwardToN8n({
+      envName: 'N8N_CONTACT_REPLY_WEBHOOK_URL',
+      request: req,
+      trustedAdminId: '11111111-1111-4111-8111-111111111111',
+      body: { contactMessageId: '22222222-2222-4222-8222-222222222222' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(headers.get('X-MudaConnect-Secret')).toBe('test-secret');
+    expect(headers.get('X-MudaConnect-Admin-Id')).toBe('11111111-1111-4111-8111-111111111111');
+    expect(headers.get('Authorization')).toBeNull();
   });
 });
