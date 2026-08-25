@@ -9,8 +9,17 @@ export interface ProxyOptions {
     | 'N8N_CONTACT_REPLY_WEBHOOK_URL';
   request: Request;
   body: Record<string, unknown>;
-  forwardAuthorization?: boolean;
+  trustedAdminId?: string;
 }
+
+export interface AdminAuthContext {
+  userId: string;
+  role: 'admin' | 'super_admin';
+}
+
+export type AdminAuthCheck =
+  | { ok: true; context: AdminAuthContext }
+  | { ok: false; response: Response };
 
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
@@ -119,22 +128,25 @@ export async function readJsonBody(
   }
 }
 
-export async function enforceAdminAuth(request: Request): Promise<Response | null> {
+export async function verifyAdminAuth(request: Request): Promise<AdminAuthCheck> {
   const authHeader = request.headers.get('authorization') || '';
   if (!authHeader.startsWith('Bearer ')) {
-    return jsonResponse({ success: false, message: 'Sesi admin tidak valid.' }, 401);
+    return { ok: false, response: jsonResponse({ success: false, message: 'Sesi admin tidak valid.' }, 401) };
   }
 
   const token = authHeader.slice(7).trim();
   if (!token) {
-    return jsonResponse({ success: false, message: 'Sesi admin tidak valid.' }, 401);
+    return { ok: false, response: jsonResponse({ success: false, message: 'Sesi admin tidak valid.' }, 401) };
   }
 
   const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL)?.trim();
   const supabaseKey = (process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY)?.trim();
 
   if (!supabaseUrl || !supabaseKey) {
-    return jsonResponse({ success: false, message: 'Layanan otentikasi belum dikonfigurasi.' }, 503);
+    return {
+      ok: false,
+      response: jsonResponse({ success: false, message: 'Layanan otentikasi belum dikonfigurasi.' }, 503),
+    };
   }
 
   try {
@@ -153,7 +165,10 @@ export async function enforceAdminAuth(request: Request): Promise<Response | nul
     const { data: authData, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !authData.user) {
-      return jsonResponse({ success: false, message: 'Sesi admin tidak valid atau telah berakhir.' }, 401);
+      return {
+        ok: false,
+        response: jsonResponse({ success: false, message: 'Sesi admin tidak valid atau telah berakhir.' }, 401),
+      };
     }
 
     const { data: profile, error: profileError } = await supabase
@@ -163,18 +178,38 @@ export async function enforceAdminAuth(request: Request): Promise<Response | nul
       .single();
 
     if (profileError || !profile) {
-      return jsonResponse({ success: false, message: 'Profil admin tidak dapat diverifikasi.' }, 403);
+      return {
+        ok: false,
+        response: jsonResponse({ success: false, message: 'Profil admin tidak dapat diverifikasi.' }, 403),
+      };
     }
 
-    const hasAdminRole = profile.role === 'admin' || profile.role === 'super_admin';
-    if (!hasAdminRole || profile.is_active !== true) {
-      return jsonResponse({ success: false, message: 'Akun tidak memiliki akses admin aktif.' }, 403);
+    const role = profile.role === 'super_admin' ? 'super_admin' : profile.role === 'admin' ? 'admin' : null;
+    if (!role || profile.is_active !== true) {
+      return {
+        ok: false,
+        response: jsonResponse({ success: false, message: 'Akun tidak memiliki akses admin aktif.' }, 403),
+      };
     }
 
-    return null;
+    return {
+      ok: true,
+      context: {
+        userId: authData.user.id,
+        role,
+      },
+    };
   } catch {
-    return jsonResponse({ success: false, message: 'Gagal memverifikasi sesi admin.' }, 500);
+    return {
+      ok: false,
+      response: jsonResponse({ success: false, message: 'Gagal memverifikasi sesi admin.' }, 500),
+    };
   }
+}
+
+export async function enforceAdminAuth(request: Request): Promise<Response | null> {
+  const result = await verifyAdminAuth(request);
+  return result.ok ? null : result.response;
 }
 
 export async function forwardToN8n(options: ProxyOptions): Promise<Response> {
@@ -194,11 +229,8 @@ export async function forwardToN8n(options: ProxyOptions): Promise<Response> {
     'X-MudaConnect-Secret': sharedSecret,
   });
 
-  if (options.forwardAuthorization) {
-    const authHeader = options.request.headers.get('authorization');
-    if (authHeader) {
-      headers.set('Authorization', authHeader);
-    }
+  if (options.trustedAdminId) {
+    headers.set('X-MudaConnect-Admin-Id', options.trustedAdminId);
   }
 
   const controller = new AbortController();
