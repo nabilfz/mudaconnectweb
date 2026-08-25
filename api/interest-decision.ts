@@ -1,11 +1,11 @@
 import {
   cleanString,
-  enforceAdminAuth,
   enforceRateLimit,
   enforceSameOrigin,
   forwardToN8n,
   jsonResponse,
   readJsonBody,
+  verifyAdminAuth,
 } from '../src/server/n8nProxy.js';
 
 export default {
@@ -22,8 +22,8 @@ export default {
     const limited = enforceRateLimit(request, 'interest-decision', 30, 60_000);
     if (limited) return limited;
 
-    const rejectedAuth = await enforceAdminAuth(request);
-    if (rejectedAuth) return rejectedAuth;
+    const auth = await verifyAdminAuth(request);
+    if (!auth.ok) return auth.response;
 
     const input = await readJsonBody(request, 4_000);
     const submissionId = cleanString(input?.submissionId, 120);
@@ -36,7 +36,7 @@ export default {
     return forwardToN8n({
       envName: 'N8N_INTEREST_DECISION_WEBHOOK_URL',
       request,
-      forwardAuthorization: true,
+      trustedAdminId: auth.context.userId,
       body: { submissionId, decision },
     });
   },
