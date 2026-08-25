@@ -102,24 +102,36 @@ Browser hanya memanggil endpoint same-origin:
 
 Vercel Functions memeriksa method, origin, ukuran JSON, field wajib, honeypot,
 waktu pengisian form, dan rate limit best-effort. Dua endpoint admin juga
-memverifikasi access token dan role aktif melalui Supabase sebelum meneruskan
-permintaan. Rate limit in-memory bukan pengganti rate limit pada Vercel
+memverifikasi access token, status profil, dan role aktif melalui Supabase
+sebelum meneruskan permintaan.
+
+Semua request dari proxy ke n8n membawa `X-MudaConnect-Secret`. Webhook n8n
+harus menggunakan Header Auth dengan nilai yang sama. Untuk endpoint admin,
+proxy juga mengirim `X-MudaConnect-Admin-Id` yang berasal dari user Supabase
+yang sudah diverifikasi. Bearer token browser tidak diteruskan ke n8n.
+
+Dengan trust boundary ini, workflow admin n8n tidak perlu mengulang verifikasi
+Supabase Auth dan lookup role. n8n tetap wajib melakukan validasi payload,
+conditional reservation/idempotency sebelum mengirim email, penyimpanan dengan
+credential Supabase yang sesuai, serta sanitasi output.
+
+Rate limit in-memory pada proxy bukan pengganti rate limit pada Vercel
 Firewall/n8n karena instance serverless dapat bertambah.
 
-Workflow n8n tetap wajib melakukan validasi ulang, idempotency, rate limiting,
-penyimpanan dengan service role, dan sanitasi output. Untuk endpoint admin, n8n
-juga menerima bearer token yang telah diverifikasi proxy.
-
-## Deployment Vercel
+## Deployment Vercel + n8n
 
 1. Gunakan Node.js 22.22+.
 2. Atur seluruh environment variable production, termasuk `N8N_SHARED_SECRET`.
-3. Jalankan ketiga migration Supabase dan verifikasi RLS menggunakan akun anon,
+3. Di n8n buat Header Auth credential dengan nama header
+   `X-MudaConnect-Secret` dan value yang sama dengan `N8N_SHARED_SECRET`.
+4. Terapkan credential tersebut ke kelima Webhook workflow MudaConnect.
+5. Jalankan ketiga migration Supabase dan verifikasi RLS menggunakan akun anon,
    admin, super-admin, serta user biasa.
-4. Pastikan semua workflow n8n aktif dan memeriksa shared secret.
-5. Jalankan `npm ci && npm run check`.
-6. Deploy, lalu uji desktop/mobile, form, MudaBot, login admin, upload media,
-   keputusan peserta, dan balasan kontak.
+6. Pastikan kelima production webhook URL dipasang sebagai `N8N_*_WEBHOOK_URL`,
+   bukan `VITE_N8N_*`.
+7. Jalankan `npm ci && npm run check`.
+8. Deploy, lalu uji desktop/mobile, form minat, form kontak, MudaBot, login
+   admin, keputusan peserta, dan balasan kontak.
 
 `vercel.json` menyediakan SPA fallback melalui rewrite serta CSP, HSTS,
 anti-framing, referrer policy, dan permissions policy. Production Express
